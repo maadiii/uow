@@ -76,6 +76,37 @@ func TestGormDo_RollsBackOnError(t *testing.T) {
 	}
 }
 
+func TestGormDo_RollsBackOnPanic(t *testing.T) { //nolint:dupl
+	t.Parallel()
+
+	mock, db := newGormMock(t)
+
+	mock.ExpectBegin()
+	mock.ExpectRollback()
+
+	uow := uow.NewGorm(db, func(tx *gorm.DB) GormRepository {
+		return GormRepository{tx}
+	})
+
+	var recovered any
+
+	func() {
+		defer func() { recovered = recover() }()
+
+		_ = uow.Do(context.Background(), func(ctx context.Context, repo GormRepository) error {
+			panic("gorm panic")
+		})
+	}()
+
+	if recovered != "gorm panic" {
+		t.Fatalf("expected the panic to propagate, got %v", recovered)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
 func TestGormDo_PropagatesErrorFromFunction(t *testing.T) {
 	t.Parallel()
 
@@ -504,14 +535,14 @@ func TestGormRollback_ErrorWhenTransactionIsNil(t *testing.T) {
 // uowGorm.SavePoint() Tests
 // ============================================================================
 
-func TestGormSavePoint_CreatesSavePoint(t *testing.T) {
+func TestGormSavePoint_CreatesSavePoint(t *testing.T) { //nolint:dupl
 	t.Parallel()
 
 	mock, db := newGormMock(t)
 
 	mock.ExpectBegin()
 	mock.ExpectExec("INSERT INTO users").WithArgs("User1").WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec("SAVEPOINT sp1").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("SAVEPOINT \"sp1\"").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("INSERT INTO users").WithArgs("User2").WillReturnResult(sqlmock.NewResult(2, 1))
 	mock.ExpectCommit()
 
@@ -583,9 +614,9 @@ func TestGormSavePoint_MultipleSavePoints(t *testing.T) { //nolint:dupl
 
 	mock.ExpectBegin()
 	mock.ExpectExec("INSERT INTO users").WithArgs("User1").WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec("SAVEPOINT sp1").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("SAVEPOINT \"sp1\"").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("INSERT INTO users").WithArgs("User2").WillReturnResult(sqlmock.NewResult(2, 1))
-	mock.ExpectExec("SAVEPOINT sp2").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("SAVEPOINT \"sp2\"").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("INSERT INTO users").WithArgs("User3").WillReturnResult(sqlmock.NewResult(3, 1))
 	mock.ExpectCommit()
 
@@ -717,9 +748,9 @@ func TestGormIntegration_NestedSavePointAndRollback(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectExec("INSERT INTO users").WithArgs("User1").WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec("SAVEPOINT sp1").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("SAVEPOINT \"sp1\"").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("INSERT INTO users").WithArgs("User2").WillReturnResult(sqlmock.NewResult(2, 1))
-	mock.ExpectExec("SAVEPOINT sp2").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("SAVEPOINT \"sp2\"").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit()
 
 	uow := uow.NewGorm(db, func(tx *gorm.DB) GormRepository { return GormRepository{tx} })

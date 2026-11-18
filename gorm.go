@@ -8,12 +8,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// RF -> Repository
 func NewGorm[R any](db *gorm.DB, constructor func(tx *gorm.DB) R) UoW[R] {
 	return &uowGorm[R]{db, constructor}
 }
 
-// R -> Repository
 type uowGorm[R any] struct {
 	db          *gorm.DB
 	constructor func(tx *gorm.DB) R
@@ -26,6 +24,8 @@ func (u *uowGorm[R]) Do(ctx context.Context, fn func(context.Context, R) error, 
 	if tx.Error != nil {
 		return tx.Error
 	}
+
+	defer rollbackOnPanic(func() error { return tx.Rollback().Error })
 
 	if err := fn(ctx, u.constructor(tx)); err != nil {
 		rollbackError := tx.Rollback().Error
@@ -74,7 +74,7 @@ func (u *uowGorm[R]) SavePoint(ctx context.Context, name string) error {
 		return ErrTransactionNotFound
 	}
 
-	return tx.SavePoint(name).Error
+	return tx.Exec(savepointStatement(name)).Error
 }
 
 func ConvertGormTxOptions(opts ...*TxOptions) *sql.TxOptions {

@@ -46,6 +46,41 @@ func TestPgxDo_CommitsOnSuccess(t *testing.T) {
 	}
 }
 
+func TestPgxDo_RollsBackOnPanic(t *testing.T) { //nolint:dupl
+	t.Parallel()
+
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("failed to create mock pool: %v", err)
+	}
+	defer mock.Close()
+
+	mock.ExpectBeginTx(pgx.TxOptions{AccessMode: pgx.ReadWrite})
+	mock.ExpectRollback()
+
+	uow := uow.NewPgx(mock, func(tx pgx.Tx) PgxRepository {
+		return PgxRepository{tx}
+	})
+
+	var recovered any
+
+	func() {
+		defer func() { recovered = recover() }()
+
+		_ = uow.Do(context.Background(), func(ctx context.Context, repo PgxRepository) error {
+			panic("pgx panic")
+		})
+	}()
+
+	if recovered != "pgx panic" {
+		t.Fatalf("expected the panic to propagate, got %v", recovered)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
 func TestPgxDo_RollsBackOnError(t *testing.T) {
 	t.Parallel()
 
@@ -666,7 +701,7 @@ func TestPgxSavePoint_CreatesSavePoint(t *testing.T) {
 
 	mock.ExpectBeginTx(pgx.TxOptions{AccessMode: pgx.ReadWrite})
 	mock.ExpectExec("INSERT INTO users").WithArgs("User1").WillReturnResult(pgxmock.NewResult("INSERT", 1))
-	mock.ExpectExec("SAVEPOINT sp1").WillReturnResult(pgxmock.NewResult("SAVEPOINT", 0))
+	mock.ExpectExec("SAVEPOINT \"sp1\"").WillReturnResult(pgxmock.NewResult("SAVEPOINT", 0))
 	mock.ExpectExec("INSERT INTO users").WithArgs("User2").WillReturnResult(pgxmock.NewResult("INSERT", 1))
 	mock.ExpectCommit()
 
@@ -750,9 +785,9 @@ func TestPgxSavePoint_MultipleSavePoints(t *testing.T) {
 
 	mock.ExpectBeginTx(pgx.TxOptions{AccessMode: pgx.ReadWrite})
 	mock.ExpectExec("INSERT INTO users").WithArgs("User1").WillReturnResult(pgxmock.NewResult("INSERT", 1))
-	mock.ExpectExec("SAVEPOINT sp1").WillReturnResult(pgxmock.NewResult("SAVEPOINT", 0))
+	mock.ExpectExec("SAVEPOINT \"sp1\"").WillReturnResult(pgxmock.NewResult("SAVEPOINT", 0))
 	mock.ExpectExec("INSERT INTO users").WithArgs("User2").WillReturnResult(pgxmock.NewResult("INSERT", 1))
-	mock.ExpectExec("SAVEPOINT sp2").WillReturnResult(pgxmock.NewResult("SAVEPOINT", 0))
+	mock.ExpectExec("SAVEPOINT \"sp2\"").WillReturnResult(pgxmock.NewResult("SAVEPOINT", 0))
 	mock.ExpectExec("INSERT INTO users").WithArgs("User3").WillReturnResult(pgxmock.NewResult("INSERT", 1))
 	mock.ExpectCommit()
 
@@ -861,9 +896,9 @@ func TestPgxIntegration_NestedSavePointAndRollback(t *testing.T) {
 
 	mock.ExpectBeginTx(pgx.TxOptions{AccessMode: pgx.ReadWrite})
 	mock.ExpectExec("INSERT INTO users").WithArgs("User1").WillReturnResult(pgxmock.NewResult("INSERT", 1))
-	mock.ExpectExec("SAVEPOINT sp1").WillReturnResult(pgxmock.NewResult("SAVEPOINT", 0))
+	mock.ExpectExec("SAVEPOINT \"sp1\"").WillReturnResult(pgxmock.NewResult("SAVEPOINT", 0))
 	mock.ExpectExec("INSERT INTO users").WithArgs("User2").WillReturnResult(pgxmock.NewResult("INSERT", 1))
-	mock.ExpectExec("SAVEPOINT sp2").WillReturnResult(pgxmock.NewResult("SAVEPOINT", 0))
+	mock.ExpectExec("SAVEPOINT \"sp2\"").WillReturnResult(pgxmock.NewResult("SAVEPOINT", 0))
 	mock.ExpectCommit()
 
 	uow := uow.NewPgx(mock, func(tx pgx.Tx) PgxRepository { return PgxRepository{tx} })

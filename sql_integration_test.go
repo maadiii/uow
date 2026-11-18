@@ -120,6 +120,35 @@ func TestSqlIntegrationBegin_SavePointAndCommit(t *testing.T) {
 	}
 }
 
+func TestSqlIntegrationBegin_SavePointWithQuotedName(t *testing.T) {
+	db := openSqlIntegrationDB(t)
+
+	uow1 := uow.NewSql(db, func(tx *sql.Tx) pgRepository { return pgRepository{tx} })
+
+	ctx, repo, err := uow1.Begin(context.Background())
+	if err != nil {
+		t.Fatalf("Begin returned error: %v", err)
+	}
+
+	if err := repo.Users().Create(ctx, "BeforeSavePoint"); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	// A savepoint name may contain characters that are significant in SQL as
+	// long as it is quoted as an identifier.
+	if err := uow1.SavePoint(ctx, `sp "odd"; --`); err != nil {
+		t.Fatalf("SavePoint with a quoted name returned error: %v", err)
+	}
+
+	if err := uow1.Commit(ctx); err != nil {
+		t.Fatalf("Commit returned error: %v", err)
+	}
+
+	if count := countUsers(t, db); count != 1 {
+		t.Fatalf("expected 1 persisted user, got %d", count)
+	}
+}
+
 func TestSqlIntegrationBegin_Rollback(t *testing.T) {
 	db := openSqlIntegrationDB(t)
 

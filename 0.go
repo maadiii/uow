@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
-// RF -> Repository
+// UoW is a unit of work over a repository of type R.
 type UoW[R any] interface {
 	Do(ctx context.Context, fn func(ctx context.Context, repo R) error, opts ...*TxOptions) error
 	Begin(ctx context.Context, opts ...*TxOptions) (context.Context, R, error)
@@ -58,6 +59,30 @@ func (i IsolationLevel) String() string {
 }
 
 var _ fmt.Stringer = LevelDefault
+
+const savepoint = "SAVEPOINT"
+
+// rollbackOnPanic rolls the transaction back when the surrounding function
+// panics and re-panics so the caller still sees the original failure. It does
+// nothing when the function returns normally, including after a failed commit.
+func rollbackOnPanic(rollback func() error) {
+	if p := recover(); p != nil {
+		_ = rollback()
+		panic(p)
+	}
+}
+
+// savepointStatement builds a SAVEPOINT statement for name. A savepoint name
+// cannot be passed as a query parameter, so it is quoted as a SQL identifier;
+// that keeps names containing quotes, semicolons or comments from changing the
+// meaning of the statement.
+func savepointStatement(name string) string {
+	return savepoint + " " + quoteIdentifier(name)
+}
+
+func quoteIdentifier(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
 
 // TxOptions holds the transaction options to be used in [DB.BeginTx].
 type TxOptions struct {

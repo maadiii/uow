@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"regexp"
 	"testing"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
@@ -66,6 +67,37 @@ func TestSqlDo_RollsBackOnError(t *testing.T) {
 
 	if err == nil {
 		t.Fatalf("expected error to propagate, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestSqlDo_RollsBackOnPanic(t *testing.T) { //nolint:dupl
+	t.Parallel()
+
+	mock, db := newSqlMock(t)
+
+	mock.ExpectBegin()
+	mock.ExpectRollback()
+
+	uow := uow.NewSql(db, func(tx *sql.Tx) SqlRepository {
+		return SqlRepository{tx}
+	})
+
+	var recovered any
+
+	func() {
+		defer func() { recovered = recover() }()
+
+		_ = uow.Do(context.Background(), func(ctx context.Context, repo SqlRepository) error {
+			panic("sql panic")
+		})
+	}()
+
+	if recovered != "sql panic" {
+		t.Fatalf("expected the panic to propagate, got %v", recovered)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -467,14 +499,14 @@ func TestSqlRollback_ErrorWhenTransactionIsNil(t *testing.T) {
 // uowsql.SavePoint() Tests
 // ============================================================================
 
-func TestSqlSavePoint_CreatesSavePoint(t *testing.T) {
+func TestSqlSavePoint_CreatesSavePoint(t *testing.T) { //nolint:dupl
 	t.Parallel()
 
 	mock, db := newSqlMock(t)
 
 	mock.ExpectBegin()
 	mock.ExpectExec("INSERT INTO users").WithArgs("User1").WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec("SAVEPOINT sp1").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("SAVEPOINT \"sp1\"").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("INSERT INTO users").WithArgs("User2").WillReturnResult(sqlmock.NewResult(2, 1))
 	mock.ExpectCommit()
 
@@ -496,6 +528,39 @@ func TestSqlSavePoint_CreatesSavePoint(t *testing.T) {
 	// Continue with more operations
 	if err := repo.Users().Create("User2"); err != nil {
 		t.Fatalf("CreateUser failed: %v", err)
+	}
+
+	if err := uow.Commit(ctx); err != nil {
+		t.Fatalf("Commit returned error: %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestSqlSavePoint_QuotesName(t *testing.T) {
+	t.Parallel()
+
+	mock, db := newSqlMock(t)
+
+	// A name with quotes and a statement terminator must stay inside the
+	// identifier instead of ending the statement.
+	name := `sp1"; DROP TABLE users; --`
+
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`SAVEPOINT "sp1""; DROP TABLE users; --"`)).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+
+	uow := uow.NewSql(db, func(tx *sql.Tx) SqlRepository { return SqlRepository{tx} })
+
+	ctx, _, err := uow.Begin(context.Background())
+	if err != nil {
+		t.Fatalf("Begin returned error: %v", err)
+	}
+
+	if err := uow.SavePoint(ctx, name); err != nil {
+		t.Fatalf("SavePoint returned error: %v", err)
 	}
 
 	if err := uow.Commit(ctx); err != nil {
@@ -546,9 +611,9 @@ func TestSqlSavePoint_MultipleSavePoints(t *testing.T) { //nolint:dupl
 
 	mock.ExpectBegin()
 	mock.ExpectExec("INSERT INTO users").WithArgs("User1").WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec("SAVEPOINT sp1").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("SAVEPOINT \"sp1\"").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("INSERT INTO users").WithArgs("User2").WillReturnResult(sqlmock.NewResult(2, 1))
-	mock.ExpectExec("SAVEPOINT sp2").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("SAVEPOINT \"sp2\"").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("INSERT INTO users").WithArgs("User3").WillReturnResult(sqlmock.NewResult(3, 1))
 	mock.ExpectCommit()
 
@@ -649,9 +714,9 @@ func TestSqlIntegration_NestedSavePointAndRollback(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectExec("INSERT INTO users").WithArgs("User1").WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec("SAVEPOINT sp1").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("SAVEPOINT \"sp1\"").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("INSERT INTO users").WithArgs("User2").WillReturnResult(sqlmock.NewResult(2, 1))
-	mock.ExpectExec("SAVEPOINT sp2").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("SAVEPOINT \"sp2\"").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit()
 
 	uow := uow.NewSql(db, func(tx *sql.Tx) SqlRepository { return SqlRepository{tx} })

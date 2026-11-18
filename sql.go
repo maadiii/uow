@@ -4,15 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 )
 
-// RF -> Repository
 func NewSql[R any](db *sql.DB, constructor func(tx *sql.Tx) R) UoW[R] {
 	return &uowsql[R]{db, constructor}
 }
 
-// R -> Repository
 type uowsql[R any] struct {
 	db          *sql.DB
 	constructor func(tx *sql.Tx) R
@@ -25,6 +22,8 @@ func (u *uowsql[R]) Do(ctx context.Context, fn func(context.Context, R) error, o
 	if err != nil {
 		return err
 	}
+
+	defer rollbackOnPanic(tx.Rollback)
 
 	if err := fn(ctx, u.constructor(tx)); err != nil {
 		rollbackError := tx.Rollback()
@@ -58,7 +57,7 @@ func (u *uowsql[R]) Commit(ctx context.Context) error {
 	return tx.Commit()
 }
 
-func (u *uowsql[T]) Rollback(ctx context.Context) error {
+func (u *uowsql[R]) Rollback(ctx context.Context) error {
 	tx, ok := ctx.Value(CtxTxKey{}).(*sql.Tx)
 	if !ok || tx == nil {
 		return ErrTransactionNotFound
@@ -67,13 +66,13 @@ func (u *uowsql[T]) Rollback(ctx context.Context) error {
 	return tx.Rollback()
 }
 
-func (u *uowsql[T]) SavePoint(ctx context.Context, name string) error {
+func (u *uowsql[R]) SavePoint(ctx context.Context, name string) error {
 	tx, ok := ctx.Value(CtxTxKey{}).(*sql.Tx)
 	if !ok || tx == nil {
 		return ErrTransactionNotFound
 	}
 
-	_, err := tx.Exec(fmt.Sprintf("%s %s", savepoint, name))
+	_, err := tx.Exec(savepointStatement(name))
 
 	return err
 }

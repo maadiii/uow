@@ -3,17 +3,12 @@ package uow
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/jackc/pgx/v5"
 )
 
-var (
-	ErrTransactionNotFound = errors.New("no transaction found in context")
-	savepoint              = "SAVEPOINT"
-)
+var ErrTransactionNotFound = errors.New("no transaction found in context")
 
-// RF -> Repository
 func NewPgx[R any](pool PgxPool, constructor func(pgx.Tx) R) UoW[R] {
 	return &uowPgx[R]{pool, constructor}
 }
@@ -23,13 +18,15 @@ type uowPgx[R any] struct {
 	constructor func(tx pgx.Tx) R
 }
 
-func (u *uowPgx[RF]) Do(ctx context.Context, fn func(context.Context, RF) error, opts ...*TxOptions) error {
+func (u *uowPgx[R]) Do(ctx context.Context, fn func(context.Context, R) error, opts ...*TxOptions) error {
 	txOpts := ConvertPgxTxOptions(opts...)
 
 	tx, err := u.pool.BeginTx(ctx, txOpts)
 	if err != nil {
 		return err
 	}
+
+	defer rollbackOnPanic(func() error { return tx.Rollback(ctx) })
 
 	if err := fn(ctx, u.constructor(tx)); err != nil {
 		rollBackError := tx.Rollback(ctx)
@@ -43,7 +40,7 @@ func (u *uowPgx[RF]) Do(ctx context.Context, fn func(context.Context, RF) error,
 	return tx.Commit(ctx)
 }
 
-func (u *uowPgx[RF]) Begin(ctx context.Context, opts ...*TxOptions) (c context.Context, rf RF, err error) { //nolint
+func (u *uowPgx[R]) Begin(ctx context.Context, opts ...*TxOptions) (c context.Context, r R, err error) { //nolint
 	txOpts := ConvertPgxTxOptions(opts...)
 
 	tx, err := u.pool.BeginTx(ctx, txOpts)
@@ -56,7 +53,7 @@ func (u *uowPgx[RF]) Begin(ctx context.Context, opts ...*TxOptions) (c context.C
 	return ctx, u.constructor(tx), nil
 }
 
-func (u *uowPgx[RepoFactory]) Commit(ctx context.Context) error {
+func (u *uowPgx[R]) Commit(ctx context.Context) error {
 	tx, ok := ctx.Value(CtxTxKey{}).(pgx.Tx)
 	if !ok || tx == nil {
 		return ErrTransactionNotFound
@@ -65,7 +62,7 @@ func (u *uowPgx[RepoFactory]) Commit(ctx context.Context) error {
 	return tx.Commit(ctx)
 }
 
-func (u *uowPgx[RepoFactory]) Rollback(ctx context.Context) error {
+func (u *uowPgx[R]) Rollback(ctx context.Context) error {
 	tx, ok := ctx.Value(CtxTxKey{}).(pgx.Tx)
 	if !ok || tx == nil {
 		return ErrTransactionNotFound
@@ -74,13 +71,13 @@ func (u *uowPgx[RepoFactory]) Rollback(ctx context.Context) error {
 	return tx.Rollback(ctx)
 }
 
-func (u *uowPgx[T]) SavePoint(ctx context.Context, name string) error {
+func (u *uowPgx[R]) SavePoint(ctx context.Context, name string) error {
 	tx, ok := ctx.Value(CtxTxKey{}).(pgx.Tx)
 	if !ok || tx == nil {
 		return ErrTransactionNotFound
 	}
 
-	_, err := tx.Exec(ctx, fmt.Sprintf("%s %s", savepoint, name))
+	_, err := tx.Exec(ctx, savepointStatement(name))
 
 	return err
 }
