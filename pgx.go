@@ -18,9 +18,9 @@ func NewPgx[R any](pool PgxPool, constructor func(pgx.Tx) R) UoW[R] {
 	return &uowPgx[R]{pool, constructor}
 }
 
-type uowPgx[RF any] struct {
+type uowPgx[R any] struct {
 	pool        PgxPool
-	constructor func(tx pgx.Tx) RF
+	constructor func(tx pgx.Tx) R
 }
 
 func (u *uowPgx[RF]) Do(ctx context.Context, fn func(context.Context, RF) error, opts ...*TxOptions) error {
