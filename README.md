@@ -42,6 +42,11 @@ uow := uow.NewPgx(pool, func(tx pgx.Tx) Repos { return NewRepos(tx) })
 `NewPgx` only needs something that can begin a transaction, so any `*pgxpool.Pool`
 satisfies it.
 
+Runnable versions of the example live in [`examples/main.go`](examples/main.go) (SQL)
+and [`examples/pgx/main.go`](examples/pgx/main.go) (pgx pool); point
+`DATABASE_URL` at a Postgres database and run `go run ./examples` or
+`go run ./examples/pgx`.
+
 ### Transaction semantics
 
 `Do(ctx, fn, opts...)`:
@@ -125,3 +130,20 @@ Besides the mock-based unit tests, the suite runs real-database integration
 tests against a `postgres:16-alpine` container started through testcontainers.
 Docker must be running; without it those tests call
 `testcontainers.SkipIfProviderIsNotHealthy` and skip.
+
+Every backend has a mock suite (`sql_test.go`, `gorm_test.go`, `pgx_test.go`) and
+an integration suite (`sql_integration_test.go`, `gorm_integration_test.go`,
+`pgx_integration_test.go`). The integration suites run the same flows against
+the container, so isolation levels, read-only mode and savepoint quoting are
+asserted by Postgres itself rather than only by the mock's expectations. There
+are no build tags: `go test ./...` runs everything.
+
+For a coverage report:
+
+```sh
+go test ./... -coverprofile=coverage.out
+go tool cover -func=coverage.out
+```
+
+The library package is at 100% statement coverage; the `examples` commands are
+run by hand and are not covered.

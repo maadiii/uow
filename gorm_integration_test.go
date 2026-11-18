@@ -156,11 +156,21 @@ func TestGormIntegrationDo_IsolationOption(t *testing.T) {
 
 	uow1 := uow.NewGorm(db, func(tx *gorm.DB) GormRepository { return GormRepository{tx} })
 
+	var isolation string
+
 	err := uow1.Do(context.Background(), func(ctx context.Context, repo GormRepository) error {
-		return repo.Users().Create("Serializable")
+		if err := repo.Users().Create("Serializable"); err != nil {
+			return err
+		}
+
+		return repo.tx.Raw("SHOW transaction_isolation").Row().Scan(&isolation)
 	}, &uow.TxOptions{Isolation: uow.LevelSerializable})
 	if err != nil {
 		t.Fatalf("expected no error with serializable isolation, got %v", err)
+	}
+
+	if isolation != serializableIsolation {
+		t.Fatalf("expected the server to report serializable isolation, got %q", isolation)
 	}
 
 	if count := countUsers(t, sqlDB); count != 1 {

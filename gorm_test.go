@@ -656,6 +656,34 @@ func TestGormSavePoint_MultipleSavePoints(t *testing.T) { //nolint:dupl
 	}
 }
 
+func TestGormDo_JoinsRollbackError(t *testing.T) {
+	t.Parallel()
+
+	mock, db := newGormMock(t)
+
+	errWork := errors.New("force rollback")
+	errRollback := errors.New("rollback failed")
+
+	mock.ExpectBegin()
+	mock.ExpectRollback().WillReturnError(errRollback)
+
+	uow1 := uow.NewGorm(db, func(tx *gorm.DB) GormRepository {
+		return GormRepository{tx}
+	})
+
+	err := uow1.Do(context.Background(), func(context.Context, GormRepository) error {
+		return errWork
+	})
+
+	if !errors.Is(err, errWork) {
+		t.Errorf("expected the work error in the result, got %v", err)
+	}
+
+	if !errors.Is(err, errRollback) {
+		t.Errorf("expected the rollback error in the result, got %v", err)
+	}
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -691,7 +719,7 @@ func newGormMock(t *testing.T) (sqlmock.Sqlmock, *gorm.DB) {
 // Integration Tests: Begin/Commit/Rollback Flow
 // ============================================================================
 
-func TestGormIntegration_BeginCommitRollbackFlow(t *testing.T) {
+func TestGormIntegration_BeginCommitRollbackFlow(t *testing.T) { //nolint:dupl
 	t.Parallel()
 
 	mock, db := newGormMock(t)

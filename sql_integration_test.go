@@ -194,11 +194,21 @@ func TestSqlIntegrationDo_IsolationOption(t *testing.T) {
 
 	uow1 := uow.NewSql(db, func(tx *sql.Tx) pgRepository { return pgRepository{tx} })
 
+	var isolation string
+
 	err := uow1.Do(context.Background(), func(ctx context.Context, repo pgRepository) error {
-		return repo.Users().Create(ctx, "Serializable")
+		if err := repo.Users().Create(ctx, "Serializable"); err != nil {
+			return err
+		}
+
+		return repo.tx.QueryRowContext(ctx, "SHOW transaction_isolation").Scan(&isolation)
 	}, &uow.TxOptions{Isolation: uow.LevelSerializable})
 	if err != nil {
 		t.Fatalf("expected no error with serializable isolation, got %v", err)
+	}
+
+	if isolation != serializableIsolation {
+		t.Fatalf("expected the server to report serializable isolation, got %q", isolation)
 	}
 
 	if count := countUsers(t, db); count != 1 {

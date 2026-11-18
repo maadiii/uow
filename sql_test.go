@@ -657,7 +657,7 @@ func TestSqlSavePoint_MultipleSavePoints(t *testing.T) { //nolint:dupl
 // Integration Tests: Begin/Commit/Rollback Flow
 // ============================================================================
 
-func TestSqlIntegration_BeginCommitRollbackFlow(t *testing.T) {
+func TestSqlIntegration_BeginCommitRollbackFlow(t *testing.T) { //nolint:dupl
 	t.Parallel()
 
 	mock, db := newSqlMock(t)
@@ -848,13 +848,13 @@ func TestConvertSqlTxOptions_IsolationLevels(t *testing.T) { //nolint:dupl
 		sqlLevel   uow.IsolationLevel
 		expectedIs sql.IsolationLevel
 	}{
-		{"Default", uow.LevelDefault, sql.LevelDefault},
+		{defaultLevelName, uow.LevelDefault, sql.LevelDefault},
 		{"ReadUncommitted", uow.LevelReadUncommitted, sql.LevelReadUncommitted},
 		{"ReadCommitted", uow.LevelReadCommitted, sql.LevelReadCommitted},
 		{"WriteCommitted", uow.LevelWriteCommitted, sql.LevelWriteCommitted},
 		{"RepeatableRead", uow.LevelRepeatableRead, sql.LevelRepeatableRead},
 		{"Snapshot", uow.LevelSnapshot, sql.LevelSnapshot},
-		{"Serializable", uow.LevelSerializable, sql.LevelSerializable},
+		{serializableLevelName, uow.LevelSerializable, sql.LevelSerializable},
 		{"Linearizable", uow.LevelLinearizable, sql.LevelLinearizable},
 	}
 
@@ -924,6 +924,34 @@ func TestConvertSqlTxOptions_ReadOnly(t *testing.T) {
 				t.Fatalf("expected %v, got %v", sql.LevelSerializable, opts.Isolation)
 			}
 		})
+	}
+}
+
+func TestSqlDo_JoinsRollbackError(t *testing.T) {
+	t.Parallel()
+
+	mock, db := newSqlMock(t)
+
+	errWork := errors.New("force rollback")
+	errRollback := errors.New("rollback failed")
+
+	mock.ExpectBegin()
+	mock.ExpectRollback().WillReturnError(errRollback)
+
+	uow1 := uow.NewSql(db, func(tx *sql.Tx) SqlRepository {
+		return SqlRepository{tx}
+	})
+
+	err := uow1.Do(context.Background(), func(context.Context, SqlRepository) error {
+		return errWork
+	})
+
+	if !errors.Is(err, errWork) {
+		t.Errorf("expected the work error in the result, got %v", err)
+	}
+
+	if !errors.Is(err, errRollback) {
+		t.Errorf("expected the rollback error in the result, got %v", err)
 	}
 }
 

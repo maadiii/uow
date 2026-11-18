@@ -18,6 +18,9 @@ const (
 	createUsersTableSQL = `CREATE TABLE IF NOT EXISTS users (id bigserial PRIMARY KEY, name text NOT NULL UNIQUE)`
 
 	truncateUsersSQL = "TRUNCATE users RESTART IDENTITY"
+
+	// serializableIsolation is how Postgres reports SHOW transaction_isolation.
+	serializableIsolation = "serializable"
 )
 
 var (

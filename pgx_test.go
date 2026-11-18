@@ -269,11 +269,11 @@ func TestPgxDo_WithDifferentIsolationLevels(t *testing.T) {
 		isolation   uow.IsolationLevel
 		expectedIso pgx.TxIsoLevel
 	}{
-		{"Default", uow.LevelDefault, pgx.ReadCommitted},
+		{defaultLevelName, uow.LevelDefault, pgx.ReadCommitted},
 		{"ReadUncommitted", uow.LevelReadUncommitted, pgx.ReadCommitted},
 		{"ReadCommitted", uow.LevelReadCommitted, pgx.ReadCommitted},
 		{"RepeatableRead", uow.LevelRepeatableRead, pgx.RepeatableRead},
-		{"Serializable", uow.LevelSerializable, pgx.Serializable},
+		{serializableLevelName, uow.LevelSerializable, pgx.Serializable},
 	}
 
 	for i, tc := range testCases {
@@ -1160,5 +1160,37 @@ func TestConvertPgxTxOptions_DefaultIsolationLevel(t *testing.T) {
 
 	if pgxOpts.AccessMode != pgx.ReadWrite {
 		t.Fatalf("expected access mode ReadWrite, got %v", pgxOpts.AccessMode)
+	}
+}
+
+func TestPgxDo_JoinsRollbackError(t *testing.T) {
+	t.Parallel()
+
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("failed to create mock pool: %v", err)
+	}
+	defer mock.Close()
+
+	errWork := errors.New("force rollback")
+	errRollback := errors.New("rollback failed")
+
+	mock.ExpectBeginTx(pgx.TxOptions{AccessMode: pgx.ReadWrite})
+	mock.ExpectRollback().WillReturnError(errRollback)
+
+	uow1 := uow.NewPgx(mock, func(tx pgx.Tx) PgxRepository {
+		return PgxRepository{tx}
+	})
+
+	err = uow1.Do(context.Background(), func(context.Context, PgxRepository) error {
+		return errWork
+	})
+
+	if !errors.Is(err, errWork) {
+		t.Errorf("expected the work error in the result, got %v", err)
+	}
+
+	if !errors.Is(err, errRollback) {
+		t.Errorf("expected the rollback error in the result, got %v", err)
 	}
 }

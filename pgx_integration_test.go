@@ -163,7 +163,7 @@ func TestPgxIntegrationDo_IsolationReachesServer(t *testing.T) {
 		t.Fatalf("expected no error with serializable isolation, got %v", err)
 	}
 
-	if isolation != "serializable" {
+	if isolation != serializableIsolation {
 		t.Fatalf("expected the server to report serializable isolation, got %q", isolation)
 	}
 }
