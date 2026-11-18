@@ -134,6 +134,23 @@ func TestGormIntegrationBegin_Rollback(t *testing.T) {
 	}
 }
 
+func TestGormIntegrationDo_ReadOnlyRejectsWrites(t *testing.T) {
+	db, sqlDB := openGormIntegrationDB(t)
+
+	uow1 := uow.NewGorm(db, func(tx *gorm.DB) GormRepository { return GormRepository{tx} })
+
+	err := uow1.Do(context.Background(), func(ctx context.Context, repo GormRepository) error {
+		return repo.Users().Create("NotAllowed")
+	}, &uow.TxOptions{ReadOnly: true})
+	if err == nil {
+		t.Fatalf("expected a read-only transaction to reject the insert")
+	}
+
+	if count := countUsers(t, sqlDB); count != 0 {
+		t.Fatalf("expected no persisted users in a read-only transaction, got %d", count)
+	}
+}
+
 func TestGormIntegrationDo_IsolationOption(t *testing.T) {
 	db, sqlDB := openGormIntegrationDB(t)
 

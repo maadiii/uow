@@ -149,6 +149,42 @@ func TestPgxIntegrationBegin_Rollback(t *testing.T) {
 	}
 }
 
+func TestPgxIntegrationDo_IsolationReachesServer(t *testing.T) {
+	pool := openPgxIntegrationPool(t)
+
+	uow1 := uow.NewPgx(pool, func(tx pgx.Tx) PgxRepository { return PgxRepository{tx} })
+
+	var isolation string
+
+	err := uow1.Do(context.Background(), func(ctx context.Context, repo PgxRepository) error {
+		return repo.pool.QueryRow(ctx, "SHOW transaction_isolation").Scan(&isolation)
+	}, &uow.TxOptions{Isolation: uow.LevelSerializable})
+	if err != nil {
+		t.Fatalf("expected no error with serializable isolation, got %v", err)
+	}
+
+	if isolation != "serializable" {
+		t.Fatalf("expected the server to report serializable isolation, got %q", isolation)
+	}
+}
+
+func TestPgxIntegrationDo_ReadOnlyRejectsWrites(t *testing.T) {
+	pool := openPgxIntegrationPool(t)
+
+	uow1 := uow.NewPgx(pool, func(tx pgx.Tx) PgxRepository { return PgxRepository{tx} })
+
+	err := uow1.Do(context.Background(), func(ctx context.Context, repo PgxRepository) error {
+		return repo.Users().Create("NotAllowed")
+	}, &uow.TxOptions{ReadOnly: true})
+	if err == nil {
+		t.Fatalf("expected a read-only transaction to reject the insert")
+	}
+
+	if count := countPgxUsers(t, pool); count != 0 {
+		t.Fatalf("expected no persisted users in a read-only transaction, got %d", count)
+	}
+}
+
 func TestPgxIntegrationDo_IsolationOption(t *testing.T) {
 	pool := openPgxIntegrationPool(t)
 
