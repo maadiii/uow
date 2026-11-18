@@ -143,6 +143,23 @@ func TestSqlIntegrationBegin_Rollback(t *testing.T) {
 	}
 }
 
+func TestSqlIntegrationDo_ReadOnlyRejectsWrites(t *testing.T) {
+	db := openSqlIntegrationDB(t)
+
+	uow1 := uow.NewSql(db, func(tx *sql.Tx) pgRepository { return pgRepository{tx} })
+
+	err := uow1.Do(context.Background(), func(ctx context.Context, repo pgRepository) error {
+		return repo.Users().Create(ctx, "NotAllowed")
+	}, &uow.TxOptions{ReadOnly: true})
+	if err == nil {
+		t.Fatalf("expected a read-only transaction to reject the insert")
+	}
+
+	if count := countUsers(t, db); count != 0 {
+		t.Fatalf("expected no persisted users in a read-only transaction, got %d", count)
+	}
+}
+
 func TestSqlIntegrationDo_IsolationOption(t *testing.T) {
 	db := openSqlIntegrationDB(t)
 

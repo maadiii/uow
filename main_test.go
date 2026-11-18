@@ -20,7 +20,7 @@ type PgxRepository struct {
 }
 
 func (p PgxRepository) Users() PgxUserRepo {
-	return PgxUserRepo{p.pool}
+	return PgxUserRepo(p)
 }
 
 type PgxUserRepo struct {

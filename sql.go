@@ -83,5 +83,8 @@ func ConvertSqlTxOptions(opts ...*TxOptions) *sql.TxOptions {
 		return nil
 	}
 
-	return &sql.TxOptions{Isolation: sql.IsolationLevel(opts[0].Isolation)}
+	return &sql.TxOptions{
+		Isolation: sql.IsolationLevel(opts[0].Isolation),
+		ReadOnly:  opts[0].ReadOnly,
+	}
 }

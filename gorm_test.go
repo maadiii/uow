@@ -891,3 +891,37 @@ func TestConvertGormTxOptions_DefaultIsolationLevel(t *testing.T) {
 		t.Fatalf("expected isolation level 999, got %v", opts.Isolation)
 	}
 }
+
+func TestConvertGormTxOptions_ReadOnly(t *testing.T) { //nolint:dupl
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		readOnly bool
+	}{
+		{"read-only transaction", true},
+		{"read-write transaction", false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			opts := uow.ConvertGormTxOptions(&uow.TxOptions{
+				Isolation: uow.LevelSerializable,
+				ReadOnly:  tc.readOnly,
+			})
+			if opts == nil {
+				t.Fatalf("expected non-nil options, got nil")
+			}
+
+			if opts.ReadOnly != tc.readOnly {
+				t.Fatalf("expected ReadOnly %v, got %v", tc.readOnly, opts.ReadOnly)
+			}
+
+			if opts.Isolation != sql.LevelSerializable {
+				t.Fatalf("expected %v, got %v", sql.LevelSerializable, opts.Isolation)
+			}
+		})
+	}
+}
